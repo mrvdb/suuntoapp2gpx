@@ -1,8 +1,15 @@
 #!/usr/bin/env python
 # -*- mode:python -*-
-# Convert suunto zip files (which contain json files) to a gpx file
-# Until Suunto gets their act together and let me have my own data normally.
+#
+# Converts suunto zip files (which contain json files) to a gpx file
+# until Suunto gets their act together and let me have my own data in
+# a normal way.
 # Needs: python 3.7
+#
+# These zip files are producted by the Suunto app and typically on
+# android are located at:
+#   <Internal Storage>/Android/data/com.stt.suunto/files/smlzip/
+#
 
 import sys
 import gpxpy
@@ -12,7 +19,7 @@ import datetime
 import zipfile
 import math
 
-# The relevant json snippets which are on a json array 'Samples'
+# The relevant json snippet which is in a json array 'Samples'
 # looks like this:
 
 #  {
@@ -20,13 +27,13 @@ import math
 #        "suunto/sml": {
 #            "Sample": {
 #                "GPSAltitude": 94,                     <-- assuming meters
-#                "Latitude": 0.88924328690504395,       <-- this value is weird
-#                "Longitude": 0.10261437316962527,      <-- this value is weird
+#                "Latitude": 0.88924328690504395,       <-- in radians
+#                "Longitude": 0.10261437316962527,      <-- in radians
 #                "UTC": "2019-04-18T07:25:29.000+00:00" <-- assumed what gps thinks of time?
 #            }
 #        }
 #    },
-#    "Source": "suunto-123456789",                      <-- id of watch
+#    "Source": "suunto-123456789",                      <-- number is the id of the device
 #    "TimeISO8601": "2019-04-18T09:25:29.000+02:00"     <-- assumed what watch thinks of time?
 #  },
 
@@ -41,7 +48,7 @@ def gpx_track(zip):
     # Create the main gpx object
     gpx = gpxpy.gpx.GPX()
 
-    # We are getting one track presumably, from the points we recorded
+    # We are getting one track presumably from the points we recorded
     track = gpxpy.gpx.GPXTrack()
     gpx.tracks.append(track)
 
@@ -57,10 +64,10 @@ def gpx_track(zip):
             sample = s["Attributes"]["suunto/sml"]["Sample"]
             # See if we have enough for a trackpoint
             if all(key in sample for key in TRKPT):
-                # Lat and long are floats between 0 and 1
+                # Lat and long are radians
                 # To decimal degrees = * 180 / PI
-                lat =  (sample["Latitude"] * 180) / math.pi # Used to be * 57.2958320392
-                lon = (sample["Longitude"] * 180) / math.pi # Used to be * 57.2952851192
+                lat =  (sample["Latitude"] * 180) / math.pi
+                lon = (sample["Longitude"] * 180) / math.pi
 
                 # I'm assuming this is in meters, and we can use it as is
                 ele = sample['GPSAltitude'] if 'GPSAltitude' in sample else 0
@@ -83,3 +90,5 @@ if __name__ == "__main__":
         # There should be a samples.json in the zip file
         if SUUNTO_SAMPLES in zip.namelist():
             gpx_track(zip)
+        else:
+            print("No track samples found in zip file!")
