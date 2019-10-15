@@ -61,23 +61,24 @@ def gpx_track(zip):
         suunto_json = json.load(json_data)
 
         for s in suunto_json["Samples"]:
-            sample = s["Attributes"]["suunto/sml"]["Sample"]
-            # See if we have enough for a trackpoint
-            if all(key in sample for key in TRKPT):
-                # Lat and long are radians
-                # To decimal degrees = * 180 / PI
-                lat =  (sample["Latitude"] * 180) / math.pi
-                lon = (sample["Longitude"] * 180) / math.pi
+            if "Sample" in s["Attributes"]["suunto/sml"]:
+                sample = s["Attributes"]["suunto/sml"]["Sample"]
+                # See if we have enough for a trackpoint
+                if all(key in sample for key in TRKPT):
+                    # Lat and long are radians
+                    # To decimal degrees = * 180 / PI
+                    lat =  (sample["Latitude"] * 180) / math.pi
+                    lon = (sample["Longitude"] * 180) / math.pi
 
-                # I'm assuming this is in meters, and we can use it as is
-                ele = sample['GPSAltitude'] if 'GPSAltitude' in sample else 0
+                    # I'm assuming this is in meters, and we can use it as is
+                    ele = sample['GPSAltitude'] if 'GPSAltitude' in sample else 0
 
-                time = datetime.datetime.fromisoformat(sample['UTC'])
+                    time = datetime.datetime.fromisoformat(sample['UTC'])
 
-                # Create the gpx point
-                point = gpxpy.gpx.GPXTrackPoint(latitude=lat, longitude=lon,
+                    # Create the gpx point
+                    point = gpxpy.gpx.GPXTrackPoint(latitude=lat, longitude=lon,
                                                 time=time, elevation=ele)
-                segment.points.append(point)
+                    segment.points.append(point)
 
     # Write out the gpx file
     with open(zip.filename.replace(".zip", ".gpx"), "w") as out:
