@@ -18,6 +18,8 @@ import json
 import datetime
 import zipfile
 import math
+from backports.datetime_fromisoformat import MonkeyPatch
+MonkeyPatch.patch_fromisoformat()
 
 # The relevant json snippet which is in a json array 'Samples'
 # looks like this:
@@ -58,7 +60,7 @@ def gpx_track(zip):
 
     # Read in the json file
     with zip.open(SUUNTO_SAMPLES, 'r') as json_data:
-        suunto_json = json.load(json_data)
+        suunto_json = json.loads(json_data.read().decode('utf-8'))
 
         for s in suunto_json["Samples"]:
             if "Sample" in s["Attributes"]["suunto/sml"]:
