@@ -6,3 +6,8 @@ A suunto sports watch can record track data, but the suunto app does not have a 
 This script takes a zip file from the android app, typically stored at =<Internal Storage>/Android/data/com.stt.suunto/files/smlzip/= and converts the samples taken by the watch and stored in JSON files to a GPX file.
 
 To get the zip-files from the android device to a machine that runs python I use [[https://syncthing.net][syncthing]] but any other file transfer tool would do just fine.
+
+
+Alternative methods to reach the same result:
+
+- export the activity from the suunto app as 'garmin fit' file from the menu and use [[https://gpsbabel.org][gpsbabel]] to convert to a gpx file. This method is possibly simpler to use, but harder to automate as the fit files need to be generated manually each time after an activity.
