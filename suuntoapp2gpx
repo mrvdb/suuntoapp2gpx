@@ -4,8 +4,9 @@
 # Converts suunto zip files (which contain json files) to a gpx file
 # until Suunto gets their act together and let me have my own data in
 # a normal way.
-# Needs: python 3.7
-#
+# Prefers: python 3.8
+# Known to work down to: python 3.5
+
 # These zip files are producted by the Suunto app and typically on
 # android are located at:
 #   <Internal Storage>/Android/data/com.stt.suunto/files/smlzip/
