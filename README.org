@@ -3,6 +3,17 @@ This script converts the [[https://www.suunto.com/suunto-app/suunto-app/][suunto
 
 A suunto sports watch can record track data, but the suunto app does not have a share or export function to create gpx files from that data.
 
+UPDATE:
+- the Suunto App now has the possibility to save GPX data from a track, so this script may be obsolete now
+- Steps:
+  1. record your activity as usual
+  2. open activity in suunto app, choose the 3-dot menu, then 'Save route' 
+  3. Give route a name and click Save
+  4. Close the activity and go to the routes
+  5. Find the saved route and click the share icon
+  6. Share the link to your browser.
+  7. A GPX file will be saved
+  
 This script takes a zip file from the android app, typically stored at =<Internal Storage>/Android/data/com.stt.suunto/files/smlzip/= and converts the samples taken by the watch and stored in JSON files to a GPX file.
 
 To get the zip-files from the android device to a machine that runs python I use [[https://syncthing.net][syncthing]] but any other file transfer tool would do just fine.
