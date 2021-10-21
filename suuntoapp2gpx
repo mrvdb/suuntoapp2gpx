@@ -6,25 +6,14 @@
 # a normal way.
 # Prefers: python 3.8
 # Known to work down to: python 3.5
-
+#
 # These zip files are producted by the Suunto app and typically on
 # android are located at:
 #   <Internal Storage>/Android/data/com.stt.suunto/files/smlzip/
 #
-
-import sys
-import gpxpy
-import gpxpy.gpx
-import json
-import datetime
-import zipfile
-import math
-from backports.datetime_fromisoformat import MonkeyPatch
-MonkeyPatch.patch_fromisoformat()
-
+#
 # The relevant json snippet which is in a json array 'Samples'
 # looks like this:
-
 #  {
 #    "Attributes": {
 #        "suunto/sml": {
@@ -40,14 +29,64 @@ MonkeyPatch.patch_fromisoformat()
 #    "TimeISO8601": "2019-04-18T09:25:29.000+02:00"     <-- assumed what watch thinks of time?
 #  },
 
+import argparse
+import datetime
+import enum
+import json
+import zipfile
+from pathlib import Path
+
+import geojson
+import gpxpy
+import gpxpy.gpx
+import math
+from backports.datetime_fromisoformat import MonkeyPatch
+
+MonkeyPatch.patch_fromisoformat()
+
 # Suunto specific stuff
 SUUNTO_SAMPLES = 'samples.json'
+SUUNTO_SUMMARY = 'summary.json'
+
+# Interesting summary fields
+ACTIVITY_TYPE = "ActivityType"
+DISTANCE = "Distance"
+DURATION = "Duration"
+ENERGY = "Energy"
+RECOVERY_TIME = "RecoveryTime"
+STEP_COUNT = "StepCount"
+EPOC = "EPOC"
+PTE = "PeakTrainingEffect"
+
+# Interesting sample fields
+CADENSE = "Cadence"
+HR = "HR"
+ALTITUDE = "Altitude"
+BATTERY = "BatteryCharge"
+SATELLITES = "NumberOfSatellites"
+SPEED = "Speed"
+PRESSURE = "AbsPressure"
+SEA_PRESSURE = "SeaLevelPressure"
+LATITUDE = "Latitude"
+LAT = "lat"
+LONGITUDE = "Longitude"
+LON = "lon"
+UTC = "UTC"
+UTC2 = "utc"
+TIME = "time"
+
+# Three keys make a trackpoint
+SPATIAL_KEYS = (LATITUDE, LONGITUDE, UTC)
+
+JOULES_TO_KCAL = 4184
+
+
+class SupportedFormat(enum.Enum):
+    GPX = "gpx"
+    GEOJSON = "geojson"
 
 
 def gpx_track(zip):
-    # Three keys make a trackpoint
-    TRKPT = ('Latitude', 'Longitude', 'UTC')
-
     # Create the main gpx object
     gpx = gpxpy.gpx.GPX()
 
@@ -67,11 +106,8 @@ def gpx_track(zip):
             if "Sample" in s["Attributes"]["suunto/sml"]:
                 sample = s["Attributes"]["suunto/sml"]["Sample"]
                 # See if we have enough for a trackpoint
-                if all(key in sample for key in TRKPT):
-                    # Lat and long are radians
-                    # To decimal degrees = * 180 / PI
-                    lat =  (sample["Latitude"] * 180) / math.pi
-                    lon = (sample["Longitude"] * 180) / math.pi
+                if all(key in sample for key in SPATIAL_KEYS):
+                    lat, lon = _get_latitude_and_longitude(sample)
 
                     # I'm assuming this is in meters, and we can use it as is
                     ele = sample['GPSAltitude'] if 'GPSAltitude' in sample else 0
@@ -80,7 +116,7 @@ def gpx_track(zip):
 
                     # Create the gpx point
                     point = gpxpy.gpx.GPXTrackPoint(latitude=lat, longitude=lon,
-                                                time=time, elevation=ele)
+                                                    time=time, elevation=ele)
                     segment.points.append(point)
 
     # Write out the gpx file
@@ -88,11 +124,111 @@ def gpx_track(zip):
         out.write(gpx.to_xml())
 
 
+def parse_features(zip):
+    latest_attributes = {
+        CADENSE: None, HR: None, ALTITUDE: 0, BATTERY: None,
+        SATELLITES: None, SPEED: None, DISTANCE: None, PRESSURE: None,
+        SEA_PRESSURE: None, TIME: None
+    }
+    attribute_keys = set(latest_attributes.keys())
+    features = []
+
+    with zip.open(SUUNTO_SAMPLES, 'r') as json_data:
+        suunto_json = json.loads(json_data.read().decode('utf-8'))
+
+        for s in suunto_json["Samples"]:
+            sample = s["Attributes"]["suunto/sml"]["Sample"]
+            for key in set(sample.keys()).intersection(attribute_keys):
+                latest_attributes[key] = sample[key]
+
+            if all(key in sample for key in SPATIAL_KEYS):
+                lat, lon = _get_latitude_and_longitude(sample)
+                time_ = sample.get(UTC, sample.get(UTC2, latest_attributes[TIME]))[:19]
+
+                latest_attributes[TIME] = time_
+                attributes = latest_attributes.copy()
+                round_float_attributes(attributes, 2)
+                altitude = attributes.get(ALTITUDE, 0) or 0
+                features.append(geojson.Feature(geometry=geojson.Point((lon, lat, altitude)),
+                                                properties=attributes))
+    return features
+
+
+def round_float_attributes(attributes, n_digits=3):
+    for key in attributes:
+        if isinstance(attributes[key], float):
+            attributes[key] = round(attributes[key], n_digits)
+
+
+def parse_summary(zip):
+    interesting_attributes = {
+        ACTIVITY_TYPE: None, DISTANCE: None, DURATION: None, ENERGY: 0,
+        RECOVERY_TIME: None, STEP_COUNT: None
+    }
+    attribute_keys = set(interesting_attributes.keys())
+
+    with zip.open(SUUNTO_SUMMARY, 'r') as json_data:
+        suunto_json = json.loads(json_data.read().decode('utf-8'))
+
+        for s in suunto_json["Samples"]:
+            if "Header" in s["Attributes"]["suunto/sml"]:
+                sample = s["Attributes"]["suunto/sml"]["Header"]
+                for key in set(sample.keys()).intersection(attribute_keys):
+                    interesting_attributes[key] = sample[key]
+
+    try:
+        interesting_attributes[ENERGY] = int(interesting_attributes[ENERGY] / JOULES_TO_KCAL)
+    except ZeroDivisionError:
+        interesting_attributes[ENERGY] = None
+
+    round_float_attributes(interesting_attributes, 1)
+
+    return interesting_attributes
+
+
+def write_to_geojson(features, summary):
+    date = features[0]["properties"][TIME].replace("T", "-")[:13]
+    fname = Path("data", str(summary[ACTIVITY_TYPE]), date + ".json")
+
+    # Write the summary as the properties of the first feature
+    features[0]["properties"] = {**features[0]["properties"], **summary}
+    fname.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write out the geojson file
+    with open(fname, "w") as out:
+        geojson.dump(geojson.FeatureCollection(features), out)
+
+
+def _get_latitude_and_longitude(sample):
+    # Lat and long are radians
+    # To decimal degrees = * 180 / PI
+    lat = (sample[LATITUDE] * 180) / math.pi
+    lon = (sample[LONGITUDE] * 180) / math.pi
+    return lat, lon
+
+
 if __name__ == "__main__":
-    # Argument is expected to be a zip file
-    with zipfile.ZipFile(sys.argv[1]) as zip:
-        # There should be a samples.json in the zip file
-        if SUUNTO_SAMPLES in zip.namelist():
-            gpx_track(zip)
-        else:
-            print("No track samples found in zip file!")
+    parser = argparse.ArgumentParser(
+        description="Converts suunto zip files (which contain json files) to a gpx or geojson files")
+    parser.add_argument("--format", "-f", choices=list(SupportedFormat), type=SupportedFormat,
+                        default=SupportedFormat.GPX.value)
+    parser.add_argument("zips", metavar="Z", type=str, nargs="+",
+                        help="Zip file(s) to convert")
+    args = parser.parse_args()
+
+    for zip_file in args.zips:
+        with zipfile.ZipFile(zip_file) as zip:
+            # There should be a samples.json in the zip file
+            if (SUUNTO_SUMMARY in zip.namelist() and
+                    SUUNTO_SAMPLES in zip.namelist()):
+                if args.format == SupportedFormat.GPX:
+                    gpx_track(zip)
+                elif args.format == SupportedFormat.GEOJSON:
+                    summary = parse_summary(zip)
+                    features = parse_features(zip)
+                    if features:
+                        write_to_geojson(features, summary)
+                    else:
+                        print(f"{zip_file} does not contain GPS data")
+            else:
+                print(f"No track samples found in zip file {zip_file}!")

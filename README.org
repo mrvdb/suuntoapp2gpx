@@ -1,4 +1,4 @@
-This script converts the [[https://www.suunto.com/suunto-app/suunto-app/][suunto android app]] track data to gpx files
+This script converts the [[https://www.suunto.com/suunto-app/suunto-app/][suunto android app]] track data to gpx or geojson files
 
 
 A suunto sports watch can record track data, but the suunto app does not have a share or export function to create gpx files from that data.
