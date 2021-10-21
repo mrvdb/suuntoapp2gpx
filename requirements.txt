@@ -1,2 +1,3 @@
 gpxpy
 backports-datetime-fromisoformat
+geojson
